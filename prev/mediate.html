@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mediate | Hostel Interface</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="mediate2.css"> 
+</head>
+
+<body>
+    <!-- Header Section Nav-Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="section-wrapper container-fluid">
+        <div class="logo">
+        <!-- <img src="images/i-am-mediate.png" alt="Mediate Logo" style="height: 55px; width: auto; object-fit: contain; border-radius: 5px; border: 2px solid #834bb8;"> -->
+        <span class="brand-text">Campus Mediate</span>
+        </div>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMenu" aria-controls="navbarMenu" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarMenu">
+        <ul class="navbar-nav mx-auto">
+            <li class="nav-item">
+            <a class="nav-link" href="mediate.html">Home</a>
+            </li>
+            <li class="nav-item">
+            <a class="nav-link" href="#about">About Us</a>
+            </li>
+            <li class="nav-item">
+            <a class="nav-link" href="#hostels">Hostels</a>
+            </li>
+            <li class="nav-item">
+            <a class="nav-link" href="#services">Services</a>
+            </li>
+            <li class="nav-item">
+            <a class="nav-link" href="#reviews">Reviews</a>
+            </li>
+            <li class="nav-item">
+            <a class="nav-link" href="#blog">Blog</a>
+            </li>
+            <li class="nav-item">
+            <a class="nav-link" href="#contact">Contact</a>
+            </li>
+            <li class="nav-item">
+            <a href="hostel-upload.html" class="nav-link list-hostel-btn button-common">
+                <i class="fas fa-plus-circle"></i> List Your Hostel
+            </a>
+            </li>
+        </ul>
+        </div>
+    </div>
+    </nav>
+
+
+    <!-- Hero Section -->
+    <section class="hero-section">    
+        <div class="section-wrapper hero-content">
+            <h1>FIND YOUR IDEAL HOSTEL</h1>
+            <p class="dynamic-text">
+                <span class="text-rotate"></span>
+            </p>
+        <div>   
+            <form class="booking-form" aria-label="Semester accommodation booking form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="semester">Select Semester</label>
+                        <select 
+                            name="semester" 
+                            id="semester"
+                            aria-label="Choose your semester period"
+                            required
+                        >
+                            <option value="">Choose your semester</option>
+                            <option value="first">First Semester (Aug - Dec)</option>
+                            <option value="second">Second Semester (Jan - May)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="room-type">Room Type</label>
+                        <select 
+                            name="room-type"
+                            id="room-type"
+                            required
+                            aria-label="Select your preferred room type"
+                        >
+                            <option value="">Select room type</option>
+                            <option value="single">Single Room</option>
+                            <option value="shared">Shared Room</option>
+                            <option value="suite">Suite</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="check-in">Check-in Date</label>
+                        <input 
+                            type="date"
+                            id="check-in"
+                            name="check-in"
+                            required
+                            aria-label="Select your check-in date"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="check-out">Check-out Date</label>
+                        <input 
+                            type="date"
+                            id="check-out"
+                            name="check-out"
+                            required
+                            aria-label="Select your check-out date"
+                        >
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button
+                        type="submit"
+                        class="btn-book btn-primary"
+                        aria-label="Check room availability"
+                    >
+                        Check Availability
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-book btn-secondary"
+                        aria-label="View detailed room information"
+                    >
+                        View Details
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        </div>
+    </section>
+
+    <!-- Updated About Section HTML -->
+    <section id="about" class="about-section">
+    <div class="section-wrapper about-container">
+        <!-- Text Content Side -->
+        <div class="about-content">
+            <h2>About Us</h2>
+            <p class="main-text"><b>Campus Mediate</b> is your dedicated online platform that connects students 
+                with hostel managers for hassle-free accommodation solutions. We provide an efficient, 
+                streamlined interface for students to find and book hostels near campus while allowing hostel managers
+                to showcase their properties and manage bookings.</p>
+
+            <p class="main-text">Our commitment is to ensure a reliable, transparent experience for both parties. Should you encounter 
+                any issues, use our contact form to report them, and we’ll resolve them promptly.</p>
+            <div class="features">
+                <div class="feature-item">
+                    <i class="fas fa-wifi"></i>
+                    <h3>High-Speed WiFi</h3>
+                    <p>Stay connected with premium internet access</p>
+                </div>
+                <div class="feature-item">
+                    <i class="fas fa-shield-alt"></i>
+                    <h3>24/7 Security</h3>
+                    <p>Round-the-clock security for your peace of mind</p>
+                </div>
+                <div class="feature-item">
+                    <i class="fas fa-coffee"></i>
+                    <h3>Study Areas</h3>
+                    <p>Dedicated spaces for focused learning</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Slider Side -->
+        <div class="about-slider">
+            <div class="slider-container">
+                <!-- Images will be inserted via JavaScript -->
+            </div>
+            <div class="slider-controls">
+                <div class="slider-dots"></div>
+            </div>
+        </div>
+    </div>
+    </section>
+
+    <!-- Hostels Section -->
+    <section id="hostels" class="hostels-section">
+    <div class="section-wrapper container">
+        <h2 class="section-title">Our Featured Hostels</h2>
+        <div class="hostels-grid">
+            <!-- Central Haven Hostel Card -->
+            <div class="hostel-card" data-hostel="central-haven">
+                <div class="hostel-image">
+                    <img src="assets/images/listed-hostels/central-haven-1.jpg" alt="Central Haven Hostel">
+                </div>
+                <div class="hostel-info">
+                    <h3>Central Haven</h3>
+                    <p class="location"><i class="fas fa-map-marker-alt"></i> City Center</p>
+                    <ul class="amenities">
+                        <li><i class="fas fa-wifi"></i> Free WiFi</li>
+                        <li><i class="fas fa-shield-alt"></i> 24/7 Security</li>
+                        <li><i class="fas fa-book"></i> Study Areas</li>
+                    </ul>
+                    <a href="hostel-details.html?id=central-haven" class="view-details-btn">View Details</a>
+                </div>
+            </div>
+
+            <!-- Urban Stay Hostel Card -->
+            <div class="hostel-card" data-hostel="urban-stay">
+                <div class="hostel-image">
+                    <img src="assets/images/listed-hostels/urban-stay-1.jpg" alt="Urban Stay Hostel">
+                </div>
+                <div class="hostel-info">
+                    <h3>Urban Stay</h3>
+                    <p class="location"><i class="fas fa-map-marker-alt"></i> Metropolitan Area</p>
+                    <ul class="amenities">
+                        <li><i class="fas fa-wifi"></i> High-Speed Internet</li>
+                        <li><i class="fas fa-utensils"></i> Kitchen Facilities</li>
+                        <li><i class="fas fa-couch"></i> Common Room</li>
+                    </ul>
+                    <a href="hostel-details.html?id=urban-stay" class="view-details-btn">View Details</a>
+                </div>
+            </div>
+
+            <!-- Student Retreat Hostel Card -->
+            <div class="hostel-card" data-hostel="student-retreat">
+                <div class="hostel-image">
+                    <img src="assets/images/listed-hostels/student-retreat-1.jpg" alt="Student Retreat Hostel">
+                </div>
+                <div class="hostel-info">
+                    <h3>Student Retreat</h3>
+                    <p class="location"><i class="fas fa-map-marker-alt"></i> Campus Zone</p>
+                    <ul class="amenities">
+                        <li><i class="fas fa-desktop"></i> Computer Lab</li>
+                        <li><i class="fas fa-dumbbell"></i> Fitness Center</li>
+                        <li><i class="fas fa-parking"></i> Parking Available</li>
+                    </ul>
+                    <a href="hostel-details.html?id=student-retreat" class="view-details-btn">View Details</a>
+
+                </div>
+            </div>
+        </div>
+        
+        <!--Promotional carded - Hostel owners-->
+        <div class="list-hostel-promo">
+            <div class="promo-content">
+            <h3>Own a Hostel?</h3>
+            <p>Join our growing community of hostel owners and reach thousands of students.</p>
+            <div class="promo-features">
+                <div class="feature">
+                <i class="fas fa-users"></i>
+                <span>Reach More Students</span>
+                </div>
+                <div class="feature">
+                <i class="fas fa-chart-line"></i>
+                <span>Increase Bookings</span>
+                </div>
+                <div class="feature">
+                <i class="fas fa-tools"></i>
+                <span>Easy Management</span>
+                </div>
+            </div>
+            <a href="hostel-upload.html" class="list-property-btn">
+                <i class="fas fa-building"></i>
+                Start List Your Property
+            </a>
+            </div>
+        </div>
+    </div>
+    </section>
+
+
+    <!--Become Host Section-->
+    <section class="become-host-section">
+    <div class="section wrapper container">
+        <div class="host-content">
+        <h2>Ready to List Your Hostel?</h2>
+        <p>Join Campus Mediate and connect with students looking for quality accommodation.</p>
+        <div class="host-benefits">
+            <div class="benefit-item">
+            <i class="fas fa-money-bill-wave"></i>
+            <h4>Earn More</h4>
+            <p>Maximize your property's earning potential</p>
+            </div>
+            <div class="benefit-item">
+            <i class="fas fa-shield-alt"></i>
+            <h4>Secure Platform</h4>
+            <p>Safe and verified booking system</p>
+            </div>
+            <div class="benefit-item">
+            <i class="fas fa-clock"></i>
+            <h4>Save Time</h4>
+            <p>Efficient booking management</p>
+            </div>
+        </div>
+        <a href="hostel-upload.html" class="become-host-btn">
+            <i class="fas fa-building"></i>
+            List Your Hostel Now
+        </a>
+        </div>
+    </div>
+    </section>
+
+    <!-- Services Section -->
+    <section id="services" class="services-section">
+    <div class="section-wrapper container">
+        <h2 class="section-title">Our Services</h2>
+        <div class="services-grid">
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <h3>Reliable Booking Platform</h3>
+                <p>Secure and efficient booking system for hassle-free hostel reservations</p>
+            </div>
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-headset"></i>
+                </div>
+                <h3>24/7 Customer Support</h3>
+                <p>Round-the-clock assistance for all your accommodation needs</p>
+            </div>
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h3>Verified Listings</h3>
+                <p>All hostels are verified to ensure quality and reliability</p>
+            </div>
+        </div>
+    </div>
+    </section>
+
+    <!-- Reviews Section -->
+    <section id="reviews" class="reviews-section">
+    <div class="section-wrapper container">
+        <h2 class="section-title">What Our Users Say</h2>
+        <div class="reviews-slider">
+            <div class="reviews-track">
+                <div class="review-card">
+                    <div class="review-content">
+                        <i class="fas fa-quote-left"></i>
+                        <p>Campus Mediate made finding a hostel so easy and stress-free!</p>
+                        <div class="reviewer-info">
+                            <img src="assets/images/avatars/Daniel.jpg" alt="Alex">
+                            <div>
+                                <h4>Alex</h4>
+                                <p>Student</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="review-card">
+                    <div class="review-content">
+                        <i class="fas fa-quote-left"></i>
+                        <p>As a hostel owner, Campus Mediate has increased my bookings significantly.</p>
+                        <div class="reviewer-info">
+                            <img src="assets/images/avatars/Daniel.jpg" alt="John">
+                            <div>
+                                <h4>John</h4>
+                                <p>Hostel Owner</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Add more review cards as needed -->
+            </div>
+            <div class="slider-controls">
+                <button class="prev-btn"><i class="fas fa-chevron-left"></i></button>
+                <button class="next-btn"><i class="fas fa-chevron-right"></i></button>
+            </div>
+        </div>
+    </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact-section">
+    <div class="section-wrapper container">
+        <div class="contact-wrapper">
+            <div class="contact-info">
+                <h2 class="section-title">Contact Us</h2>
+                <div class="contact-details">
+                    <div class="contact-item">
+                        <i class="fas fa-envelope"></i>
+                        <p>support@campusmediate.com</p>
+                    </div>
+                    <div class="contact-item">
+                        <i class="fas fa-phone"></i>
+                        <p>+256 33 000 333</p>
+                    </div>
+                    <div class="contact-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <p>Gulu, Uganda</p>
+                    </div>
+                </div>
+                <div class="social-links">
+                    <a href="#" aria-label="Facebook"><i class="fab fa-facebook"></i></a>
+                    <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+                    <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+                </div>
+            </div>
+            <div class="contact-form">
+                <form id="contactForm" autocomplete="off" enctype="multipart/form-data" novalidate onsubmit="return validatForm()" spellcheck="false">
+                    <div class="form-group">
+                        <input type="text" id="name" name="name" autocomplete="off">
+                        <label for="name">Your Name</label>
+                    </div>
+                    <div class="form-group">
+                        <input type="email" 
+                               id="email" 
+                               name="email"
+                               pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
+                               maxlength="100" 
+                               autocomplete="off"
+                               required
+                               >
+                        <label for="email">Your Email</label>
+
+                    </div>
+                    <div class="form-group">
+                        <textarea id="message" name="message" required></textarea>
+                        <label for="message">Your Message</label>
+                    </div>
+                    <button type="submit" class="submit-btn">
+                        <span>Send Message</span>
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    </section>
+
+    <!-- Footer Section -->
+    <footer class="site-footer">
+    <div class="section-wrapper container">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h3>Campus Mediate</h3>
+                <p>Your trusted platform for student accommodation</p>
+            </div>
+            <div class="footer-links">
+                <div class="link-group">
+                    <h4>Quick Links</h4>
+                    <ul>
+                        <li><a href="#about">About Us</a></li>
+                        <li><a href="#services">Services</a></li>
+                        <li><a href="#hostels">Hostels</a></li>
+                        <li><a href="#contact">Contact</a></li>
+                    </ul>
+                </div>
+                <div class="link-group">
+                    <h4>Support</h4>
+                    <ul>
+                        <li><a href="#">FAQs</a></li>
+                        <li><a href="#">Privacy Policy</a></li>
+                        <li><a href="#">Terms of Service</a></li>
+                        <li><a href="#">Help Center</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2025 Campus Mediate. All rights reserved.</p>
+        </div>
+    </div>
+    </footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/js/mediate-2.js"></script>
+<script>
+    
+  // JavaScript to handle the navigation and data loading
+  document.addEventListener('DOMContentLoaded', function() {
+    updateNavbarState();
+});
+
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+// Define the update function
+function updateNavbarState() {
+    const scrollTop = $(document).scrollTop();
+    const nav = $('nav');
+    const enquireBtn = $('#enquire-btn');
+    const logo = $('#logo');
+    const logoLink = $('#logo-link');
+}
+
+// Apply throttling to scroll event
+$(window).scroll(throttle(function() {
+    updateNavbarState();
+}, 100)); // Updates every 100ms at most
+
+  // On the main page (where the hostel cards are)
+
+document.querySelectorAll('.view-details-btn').forEach(button => {
+    button.addEventListener('click', e => {
+        e.preventDefault();
+        const hostelId = button.getAttribute('href').split('=')[1];
+        // alert(hostelId);
+        window.location.href = `hostel-details.html?id=${hostelId}`;
+    });
+});
+
+function validateForm() {
+    const name = document.getElementById('name');
+    const email = document.getElementById('email');
+    const password = document.getElementById('password');
+
+    // Name validation
+    if (!/^[A-Za-z\s]+$/.test(name.value)) {
+        alert('Name can only contain letters and spaces');
+        return false;
+    }
+    
+    // Email validation
+    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.value)) {
+        alert('Please enter a valid email address');
+        return false;
+    }
+    return true;
+}
+</script>
+</body>
+</html>

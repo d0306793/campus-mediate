@@ -1,0 +1,31 @@
+# Ignore configuration files with sensitive data
+config/db_config.php
+config/payment_config.php
+passkeys.txt
+
+# Ignore user uploads
+assets/uploads/
+
+# Ignore vendor dependencies (can be reinstalled with composer)
+# vendor/
+
+# Ignore temporary files
+*.tmp
+*.log
+*.cache
+
+# Ignore IDE specific files
+.vscode/
+.idea/
+*.sublime-*
+
+# Ignore OS specific files
+.DS_Store
+Thumbs.db
+
+# Ignore test files
+payment/test_payment.php
+New Text Document.txt
+
+# Ignore backup files
+*.bak

@@ -1,0 +1,239 @@
+/* General Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    zoom: 103%;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    color: #333;
+    line-height: 1.6;
+}
+
+header {
+    background: #834bb8;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header .logo img {
+    max-width: 150px;
+}
+
+
+/* Nav Bar */
+
+.navbar {
+    /* background: lightcoral; */
+    background: linear-gradient(45deg, #834bb8 0%, #FF8383 50%, #5bcab4 100%);
+    min-height: 15vh;
+    border-bottom: 2px solid gold;
+}
+
+.nav-link {
+    color: gold;
+    position: relative;
+    font-size: large;
+    transition: all 0.3s ease;
+    display: inline-block;
+}
+
+.nav-link:hover {
+    transform: scale(1.05);
+}
+
+.nav-link::after {
+    content: '';   /*'attr(data-content)'; This will grab the content from data-content attribute */
+    position: absolute;
+    width: 0;
+    height: 2px;
+    background: #5bcab4;
+    left: 0;
+    bottom: -5px;
+    transition: width 0.3s ease;
+    color:#FF8383;
+    overflow: hidden;
+}
+
+.nav-link:hover::after {
+    width: 100%;
+}
+
+.navbar-brand {
+    color: #834bb8;
+    font-weight: bold;
+}
+
+
+/* Responsive design for smaller screens */
+@media screen and  (max-width: 768px) {
+    nav ul {
+        grid-template-columns: 1fr; /* Stack items 
+        vertically on mobile  */
+        grid-template-rows: repeat(6, auto);
+    }
+}
+
+.btn-book {
+    background: #FF8383;
+    color: white;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+}
+
+/* Styling for first button */
+.btn1:hover {
+    background: #a1afd6;
+    color: white;
+}
+
+/* Styling for second button */
+.btn2:hover {
+    background: #a1d6c2;
+    color: white;
+}
+
+
+
+/* Hero Section */
+
+.hero-section {
+    background: url('https://i.ibb.co/kJskFpG/Bedframe.jpg') no-repeat center/cover;    
+    height: 100vh;
+    color: #FFF;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    position: relative;
+}
+
+.hero-section::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1;
+}
+
+/* Hero Content */
+/* New CSS */
+.hero-content {
+    text-align: center;
+    padding: 2rem;
+    position: relative;
+    z-index: 2;
+}
+
+.hero-content h1 {
+    color: gold;
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    animation: fadeInDown 1.5s ease-out;
+}
+
+.dynamic-text {
+    font-size: 1.5rem;
+    min-height: 2em;
+    color: #5bcab4;
+    font-size: 1.2rem;
+    margin-bottom: 2rem;
+}
+
+.text-rotate::after {
+    content: '|';
+    animation: blink 0.7s infinite;
+}
+
+/* Animations */
+@keyframes fadeInDown {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* Additional styling for emphasis */
+.hero-content h1 {
+    /* ... existing styles ... */
+    background: linear-gradient(45deg, #834bb8, #FF8383);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.dynamic-text {
+    /* ... existing styles ... */
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+
+
+/* CONTENT FORM */
+
+.hero-content form {
+    display: flex;
+    gap: 10px;
+}
+
+.hero-content form input,
+.hero-content form select,
+.hero-content form button {
+    padding: 0.5rem;
+    border: none;
+    border-radius: 5px;
+}
+
+.hero-content form button {
+    background: #FF8383;
+    color: white;
+    cursor: pointer;
+}
+
+.hero-content form button:hover {
+    background: #A19AD3;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    nav ul {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .hero-content h1 {
+        font-size: 2rem;
+    }
+
+    .hero-content form {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+
+
+
