@@ -106,17 +106,16 @@ function getHostelManagerId($conn, $hostel_id) {
 /**
  * Create a notification
  */
-function createNotification($conn, $type, $title, $message, $hostel_id, $related_id, $recipient_id) {
+function createNotification($conn, $notification_type, $title, $message, $hostel_id, $related_id, $recipient_id) {
     $stmt = $conn->prepare("
         INSERT INTO notifications (
-            type, title, message, hostel_id, related_id, recipient_id
+            notification_type, title, message, hostel_id, related_id, recipient_id
         ) VALUES (?, ?, ?, ?, ?, ?)
     ");
-    $stmt->bind_param("sssiii", $type, $title, $message, $hostel_id, $related_id, $recipient_id);
+    $stmt->bind_param("sssiii", $notification_type, $title, $message, $hostel_id, $related_id, $recipient_id);
     $stmt->execute();
     $stmt->close();
 }
-
 
 
 /**
@@ -135,7 +134,6 @@ function getRoomInventoryByType($conn, $hostel_id, $room_type) {
     
     return null;
 }
-
 
 
 /**
@@ -163,6 +161,7 @@ function generateRoomNumber($template, $index = null) {
     
     return $roomNumber;
 }
+
 
 /**
  * Generate an example room number for display
@@ -213,8 +212,13 @@ function assignRoomNumber($conn, $booking_id, $hostel_id, $room_id, $room_type) 
         $template = $result->fetch_assoc();
     }
     
-    // Get existing assignments to avoid duplicates
-    $stmt = $conn->prepare("SELECT assigned_room_number FROM room_assignments WHERE hostel_id = ?");
+    // Get existing assignments for this hostel to avoid duplicates
+    $stmt = $conn->prepare("
+        SELECT ra.assigned_room_number 
+        FROM room_assignments ra
+        JOIN bookings b ON ra.booking_id = b.id
+        WHERE b.hostel_id = ?
+    ");
     $stmt->bind_param("i", $hostel_id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -233,8 +237,8 @@ function assignRoomNumber($conn, $booking_id, $hostel_id, $room_id, $room_type) 
     } while (in_array($roomNumber, $existingNumbers) && $index < 1000); // Prevent infinite loop
     
     // Insert the assignment
-    $stmt = $conn->prepare("INSERT INTO room_assignments (booking_id, room_id, hostel_id, assigned_room_number) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("iiis", $booking_id, $room_id, $hostel_id, $roomNumber);
+    $stmt = $conn->prepare("INSERT INTO room_assignments (booking_id, room_id, assigned_room_number) VALUES (?, ?, ?)");
+    $stmt->bind_param("iis", $booking_id, $room_id, $roomNumber);
     $stmt->execute();
     
     return $roomNumber;
@@ -381,5 +385,41 @@ function getGreeting() {
     } else {
         return " Good evening";
     }
+}
+
+/**
+ * Get the end date of the currently active semester
+ * If no active semester is found, returns a date 4 months from now
+ * 
+ * @param mysqli $conn Database connection
+ * @return string Date in Y-m-d format
+ */
+function getActiveSemesterEndDate($conn) {
+    try {
+        // Check if university_calendar table exists
+        $table_check = $conn->query("SHOW TABLES LIKE 'university_calendar'");
+        
+        if ($table_check->num_rows > 0) {
+            // Table exists, get active semester end date
+            $stmt = $conn->prepare("
+                SELECT end_date FROM university_calendar 
+                WHERE is_active = 1 
+                ORDER BY end_date DESC 
+                LIMIT 1
+            ");
+            $stmt->execute();
+            $result = $stmt->get_result();
+            
+            if ($result->num_rows > 0) {
+                $row = $result->fetch_assoc();
+                return $row['end_date'];
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Error getting semester end date: " . $e->getMessage());
+    }
+    
+    // Default fallback - 4 months from now (typical semester length)
+    return date('Y-m-d', strtotime('+4 months'));
 }
 ?>

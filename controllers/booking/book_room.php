@@ -37,6 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $check_out_date = $_POST['check_out_date'] ?? '';
     $special_requests = $_POST['special_requests'] ?? '';
     
+    // If check_out_date is empty or not provided, use semester end date
+    if (empty($check_out_date)) {
+        $check_out_date = getActiveSemesterEndDate($conn);
+    }
+    
     if (!$check_in_date || !$check_out_date) {
         $error = "Please select check-in and check-out dates.";
     } else {
@@ -134,20 +139,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         
         <form method="POST">
-            <div class="mb-3">
-                <label for="check_in_date" class="form-label">Check-in Date*</label>
-                <input type="date" class="form-control" id="check_in_date" name="check_in_date" required min="<?php echo date('Y-m-d'); ?>">
+            <div class="form-group">
+                <label for="check_in_date">Check-in Date</label>
+                <input type="date" id="check_in_date" name="check_in_date" class="form-control" required onchange="updateCheckoutDate()">
             </div>
-            
-            <div class="mb-3">
-                <label for="check_out_date" class="form-label">Check-out Date*</label>
-                <input type="date" class="form-control" id="check_out_date" name="check_out_date" required min="<?php echo date('Y-m-d', strtotime('+1 day')); ?>">
+
+            <div class="form-group">
+                <label for="check_out_date">Check-out Date</label>
+                <input type="date" id="check_out_date" name="check_out_date" class="form-control" readonly>
+                <small id="checkout_display" class="form-text text-muted">Check-out date will be set to semester end</small>
             </div>
-            
-            <div class="mb-3">
-                <label for="special_requests" class="form-label">Special Requests</label>
-                <textarea class="form-control" id="special_requests" name="special_requests" rows="3"></textarea>
+
+            <!-- Add this for admin or special cases -->
+            <div class="form-check mt-2">
+                <input type="checkbox" id="custom_checkout" class="form-check-input" onchange="toggleCustomCheckout()">
+                <label for="custom_checkout" class="form-check-label">Use custom check-out date</label>
             </div>
+
             
             <div class="price-summary">
                 Total: <?php echo number_format($price); ?> UGX
@@ -171,6 +179,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 this.value = '';
             }
         });
+
+        function toggleCustomCheckout() {
+            const checkoutField = document.getElementById('check_out_date');
+            const isCustom = document.getElementById('custom_checkout').checked;
+            
+            checkoutField.readOnly = !isCustom;
+            
+            if (!isCustom) {
+                // Reset to semester end date
+                updateCheckoutDate();
+            }
+        }
+
     </script>
 </body>
 </html>

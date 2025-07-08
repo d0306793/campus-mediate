@@ -56,17 +56,27 @@ if ($hostel_exists) {
     $stmt_check->close();
     
     if ($has_rooms) {
-        // If we have rooms in the rooms table, get occupied and available statistics
+        // Get current date for check-in comparison
+        $current_date = date('Y-m-d');
+        
+        // Calculate room availability based on room assignments and bookings
         $stmt_rooms = $conn->prepare("SELECT 
-                                    SUM(CASE WHEN status = 'Occupied' THEN (CASE WHEN quantity IS NOT NULL THEN quantity ELSE 1 END) ELSE 0 END) as occupied,
-                                    SUM(CASE WHEN status = 'Available' THEN (CASE WHEN quantity IS NOT NULL THEN quantity ELSE 1 END) ELSE 0 END) as available
-                                    FROM rooms WHERE hostel_id = ?");
-        $stmt_rooms->bind_param("i", $hostel['id']);
+                                    SUM(CASE WHEN r.quantity IS NOT NULL THEN r.quantity ELSE 1 END) as total_room_units,
+                                    (SELECT COUNT(*) FROM room_assignments ra 
+                                     JOIN bookings b ON ra.booking_id = b.id 
+                                     WHERE b.hostel_id = ? AND b.status IN ('Confirmed', 'Completed')) as assigned_rooms,
+                                    (SELECT COUNT(*) FROM bookings b 
+                                     WHERE b.hostel_id = ? AND b.status IN ('Confirmed') 
+                                     AND b.check_in_date <= ?) as checked_in_bookings
+                                    FROM rooms r WHERE r.hostel_id = ?");
+        $stmt_rooms->bind_param("iisi", $hostel['id'], $hostel['id'], $current_date, $hostel['id']);
         $stmt_rooms->execute();
         $result_rooms = $stmt_rooms->get_result();
         if ($row = $result_rooms->fetch_assoc()) {
-            $occupied_rooms = $row['occupied'] ?? 0;
-            $available_rooms = $row['available'] ?? 0;
+            $total_room_units = $row['total_room_units'] ?? 0;
+            // Occupied = rooms with assignments + bookings that have checked in
+            $occupied_rooms = max($row['assigned_rooms'] ?? 0, $row['checked_in_bookings'] ?? 0);
+            $available_rooms = max(0, $total_room_units - $occupied_rooms);
         }
         $stmt_rooms->close();
     } else {
@@ -79,11 +89,13 @@ if ($hostel_exists) {
 $total_bookings = 0;
 $pending_bookings = 0;
 $confirmed_bookings = 0;
+$completed_bookings = 0;
 
 if ($hostel_exists) {
     $stmt_bookings = $conn->prepare("SELECT COUNT(*) as total,
                                    SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
-                                   SUM(CASE WHEN status = 'Confirmed' THEN 1 ELSE 0 END) as confirmed
+                                   SUM(CASE WHEN status = 'Confirmed' THEN 1 ELSE 0 END) as confirmed,
+                                   SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed
                                    FROM bookings WHERE hostel_id = ?");
     $stmt_bookings->bind_param("i", $hostel['id']);
     $stmt_bookings->execute();
@@ -92,6 +104,7 @@ if ($hostel_exists) {
         $total_bookings = $row['total'] ?? 0;
         $pending_bookings = $row['pending'] ?? 0;
         $confirmed_bookings = $row['confirmed'] ?? 0;
+        $completed_bookings = $row['completed'] ?? 0;
     }
     $stmt_bookings->close();
 }
@@ -99,9 +112,21 @@ if ($hostel_exists) {
 // Get payment statistics
 $total_payments = 0;
 $total_amount = 0;
+$pending_payments = 0;
+$completed_payments = 0;
+$failed_payments = 0;
+$refunded_payments = 0;
+$failed_amount = 0;
 
 if ($hostel_exists) {
-    $stmt_payments = $conn->prepare("SELECT COUNT(*) as total, SUM(amount) as total_amount 
+    $stmt_payments = $conn->prepare("SELECT 
+                                    COUNT(*) as total,
+                                    SUM(CASE WHEN status = 'Completed' THEN amount ELSE 0 END) as total_amount,
+                                    SUM(CASE WHEN status = 'Failed' THEN amount ELSE 0 END) as failed_amount,
+                                    SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
+                                    SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed,
+                                    SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END) as failed,
+                                    SUM(CASE WHEN status = 'Refunded' THEN 1 ELSE 0 END) as refunded
                                   FROM payments WHERE hostel_id = ?");
     $stmt_payments->bind_param("i", $hostel['id']);
     $stmt_payments->execute();
@@ -109,6 +134,11 @@ if ($hostel_exists) {
     if ($row = $result_payments->fetch_assoc()) {
         $total_payments = $row['total'] ?? 0;
         $total_amount = $row['total_amount'] ?? 0;
+        $failed_amount = $row['failed_amount'] ?? 0;
+        $pending_payments = $row['pending'] ?? 0;
+        $completed_payments = $row['completed'] ?? 0;
+        $failed_payments = $row['failed'] ?? 0;
+        $refunded_payments = $row['refunded'] ?? 0;
     }
     $stmt_payments->close();
 }
@@ -126,6 +156,34 @@ if ($manager_id !== null) {
     }
     $stmt_notifications->close();
 }
+
+function timeAgo($datetime) {
+    $time = strtotime($datetime);
+    $now = time();
+    $diff = $now - $time;
+    
+    if ($diff < 60) {
+        return $diff . " seconds ago";
+    } elseif ($diff < 3600) {
+        $mins = round($diff / 60);
+        return $mins . " minute" . ($mins > 1 ? "s" : "") . " ago";
+    } elseif ($diff < 86400) {
+        $hours = round($diff / 3600);
+        return $hours . " hour" . ($hours > 1 ? "s" : "") . " ago";
+    } elseif ($diff < 604800) {
+        $days = round($diff / 86400);
+        return $days . " day" . ($days > 1 ? "s" : "") . " ago";
+    } elseif ($diff < 2592000) {
+        $weeks = round($diff / 604800);
+        return $weeks . " week" . ($weeks > 1 ? "s" : "") . " ago";
+    } elseif ($diff < 31536000) {
+        $months = round($diff / 2592000);
+        return $months . " month" . ($months > 1 ? "s" : "") . " ago";
+    } else {
+        $years = round($diff / 31536000);
+        return $years . " year" . ($years > 1 ? "s" : "") . " ago";
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -137,6 +195,26 @@ if ($manager_id !== null) {
     <link rel="stylesheet" href="../../../assets/css/dashboard.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <style>
+        .manager-welcome {
+            background-color: #6a0dad;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .manager-welcome h3 {
+            margin-top: 0;
+            font-size: 22px;
+            color: white;
+        }
+        
+        .manager-welcome p {
+            margin-bottom: 0;
+            font-size: 16px;
+        }
+        
         .badge {
             background-color: #ff4757;
             color: white;
@@ -230,8 +308,8 @@ if ($manager_id !== null) {
         section.active {
             display: block !important;
         }
-        /* Default dashboard visible */
-        #dashboard {
+        /* Default dashboard visible only when active */
+        #dashboard.active {
             display: block;
         }
 
@@ -368,41 +446,39 @@ if ($manager_id !== null) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(45, 58, 76, 0.3);
         }
-
-
-
     </style>
+
     <script>
     // Define openTab function at the top so it's available for onclick attributes
     function openTab(evt, tabName) {
-      // Hide all sections
-      var sections = document.getElementsByTagName("section");
-      for (var i = 0; i < sections.length; i++) {
-        sections[i].classList.remove("active");
-        sections[i].style.display = "none";
-      }
-      
-      // Remove active class from all tab links
-      var tablinks = document.getElementsByClassName("tab-link");
-      for (var i = 0; i < tablinks.length; i++) {
-        tablinks[i].classList.remove("active");
-      }
-      
-      // Show the current tab and add active class to the button
-      var targetSection = document.getElementById(tabName);
-      if (targetSection) {
-        targetSection.classList.add("active");
-        targetSection.style.display = "block";
-      } else {
-        // If section doesn't exist, show dashboard instead
-        document.getElementById("dashboard").classList.add("active");
-        document.getElementById("dashboard").style.display = "block";
-      }
-      
-      // Add active class to the tab link
-      if (evt && evt.currentTarget) {
-        evt.currentTarget.classList.add("active");
-      }
+        // Hide all sections
+        var sections = document.getElementsByTagName("section");
+        for (var i = 0; i < sections.length; i++) {
+            sections[i].classList.remove("active");
+            sections[i].style.display = "none";
+        }
+        
+        // Remove active class from all tab links
+        var tablinks = document.getElementsByClassName("tab-link");
+        for (var i = 0; i < tablinks.length; i++) {
+            tablinks[i].classList.remove("active");
+        }
+        
+        // Show the current tab and add active class to the button
+        var targetSection = document.getElementById(tabName);
+        if (targetSection) {
+            targetSection.classList.add("active");
+            targetSection.style.display = "block";
+        } else {
+            // If section doesn't exist, show dashboard instead
+            document.getElementById("dashboard").classList.add("active");
+            document.getElementById("dashboard").style.display = "block";
+        }
+        
+        // Add active class to the tab link
+        if (evt && evt.currentTarget) {
+            evt.currentTarget.classList.add("active");
+        }
     }
 
     function showBookingTab(tabName, event) {
@@ -455,8 +531,25 @@ if ($manager_id !== null) {
         }
     }
 
+    // Debug function to check all sections
+    function debugSections() {
+        console.log("=== DEBUG: All sections in DOM ===");
+        var sections = document.getElementsByTagName("section");
+        for (var i = 0; i < sections.length; i++) {
+            console.log("Section " + i + ": id='" + sections[i].id + "'");
+        }
+        console.log("Total sections found: " + sections.length);
+        
+        // Check specific sections
+        console.log("payments section:", document.getElementById('payments'));
+        console.log("notifications section:", document.getElementById('notifications'));
+        console.log("reports section:", document.getElementById('reports'));
+    }
+
     // Initialize tabs on page load
     document.addEventListener("DOMContentLoaded", function() {
+      debugSections(); // Add debug info
+      
       // Check for hash in URL first
       if (window.location.hash) {
         var tabName = window.location.hash.substring(1);
@@ -504,7 +597,7 @@ if ($manager_id !== null) {
             <li><a href="#rooms" class="tab-link" onclick="openTab(event, 'rooms')"><i class="fas fa-bed"></i> Rooms</a></li>
             <li><a href="#bookings" class="tab-link" onclick="openTab(event, 'bookings')"><i class="fas fa-calendar-check"></i> Bookings</a></li>
             <li><a href="#payments" class="tab-link" onclick="openTab(event, 'payments')"><i class="fas fa-credit-card"></i> Payments</a></li>
-            <li><a href="#notifications" class="tab-link" onclick="openTab(event, 'notifications')"><i class="fas fa-bell"></i> Notifications</a></li>
+            <li><a href="#notifications" class="tab-link" onclick="openTab(event, 'notifications')"><i class="fas fa-bell"></i> Notifications <?php if ($notification_count > 0): ?><span class="badge"><?php echo $notification_count; ?></span><?php endif; ?></a></li>
             <li><a href="#reports" class="tab-link" onclick="openTab(event, 'reports')"><i class="fas fa-chart-bar"></i> Reports</a></li>
             <li><a href="#profile" class="tab-link" onclick="openTab(event, 'profile')"><i class="fas fa-user"></i> Profile</a></li>
             <li><a href="../../../logout.php" class="tab-link logout-link"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
@@ -552,7 +645,10 @@ if ($manager_id !== null) {
                 </div>
                 <?php unset($_SESSION['dashboard_success_message']); ?>
             <?php endif; ?>
-            <p>Welcome to your enhanced dashboard, <?php echo htmlspecialchars($username); ?>!</p>
+            <div class="manager-welcome">
+                <h3>Welcome, Manager <?php echo htmlspecialchars($username); ?>!</h3>
+                <p>You are logged in as a <strong>Hostel Manager</strong>. Manage your hostel, rooms, bookings, and payments from this dashboard.</p>
+            </div>
             
             <?php if (!$hostel_exists): ?>
                 <div class="summary-card">
@@ -681,6 +777,7 @@ if ($manager_id !== null) {
 
             <?php endif; ?>
         </section>
+
         <section id="hostel">
             <h2><?php echo $hostel_exists ? 'My Hostel Details' : 'Add Hostel Details'; ?></h2>
 
@@ -761,6 +858,7 @@ if ($manager_id !== null) {
                 </form>
             </div>
         </section>
+        
         <section id="rooms">
             <h2>🛏️ Room Management</h2>
 
@@ -1018,6 +1116,7 @@ if ($manager_id !== null) {
             endif; 
             ?>
         </section>
+
         <section id="bookings">
             <h2>📋 Bookings Management</h2>
             
@@ -1039,7 +1138,7 @@ if ($manager_id !== null) {
                 <button class="booking-tab active" onclick="showBookingTab('pending', event)">Pending (<?php echo $pending_bookings; ?>)</button>
                 <button class="booking-tab" onclick="showBookingTab('confirmed', event)">Confirmed (<?php echo $confirmed_bookings; ?>)</button>
                 <button class="booking-tab" onclick="showBookingTab('cancelled', event)">Cancelled</button>
-                <button class="booking-tab" onclick="showBookingTab('completed', event)">Completed</button>
+                <button class="booking-tab" onclick="showBookingTab('completed', event)">Completed (<?php echo $completed_bookings; ?>)</button>
             </div>
             
             <div id="pending-bookings" class="booking-content active">
@@ -1047,19 +1146,19 @@ if ($manager_id !== null) {
                     <h4>Bulk Actions</h4>
                     <div class="bulk-actions-buttons">
                         <form action="../../../controllers/booking/bulk_actions.php" method="POST" style="display:inline;">
-                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel_exists ? $hostel['id'] : '0'; ?>">
                             <input type="hidden" name="action" value="confirm_all">
                             <button type="submit" class="btn-confirm">Confirm All Pending Bookings</button>
                         </form>
                         
                         <form action="../../../controllers/booking/bulk_actions.php" method="POST" style="display:inline;">
-                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel_exists ? $hostel['id'] : '0'; ?>">
                             <input type="hidden" name="action" value="assign_all_rooms">
                             <button type="submit" class="btn-assign">Auto-Assign All Rooms</button>
                         </form>
                         
                         <form action="../../../controllers/booking/bulk_actions.php" method="POST" style="display:inline;">
-                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel_exists ? $hostel['id'] : '0'; ?>">
                             <input type="hidden" name="action" value="complete_all_past">
                             <button type="submit" class="btn-complete">Complete All Past Bookings</button>
                         </form>
@@ -1077,13 +1176,14 @@ if ($manager_id !== null) {
                 <?php
                 if ($hostel_exists) {
                     $stmt_pending = $conn->prepare("
-                        SELECT b.*, u.username as student_name, u.email as student_email, 
+                        SELECT b.*, COALESCE(b.full_name, u.username) as student_name, u.email as student_email, 
                             r.room_type, r.price_per_semester
                         FROM bookings b
                         JOIN users u ON b.user_id = u.id
                         JOIN rooms r ON b.room_id = r.id
                         WHERE b.hostel_id = ? AND b.status = 'Pending'
                         ORDER BY b.check_in_date ASC
+
                     ");
                     $stmt_pending->bind_param("i", $hostel['id']);
                     $stmt_pending->execute();
@@ -1107,9 +1207,13 @@ if ($manager_id !== null) {
                             <?php while ($booking = $result_pending->fetch_assoc()): ?>
                                 <tr>
                                     <td>
-                                        <?php echo htmlspecialchars($booking['student_name']); ?><br>
+                                        <?php 
+                                        $name_parts = explode(' ', $booking['student_name']);
+                                        echo htmlspecialchars(implode(' ', $name_parts)); 
+                                        ?><br>
                                         <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                     </td>
+
                                     <td><?php echo htmlspecialchars($booking['room_type']); ?></td>
                                     <td><?php echo htmlspecialchars($booking['quantity'] ?? 1); ?></td>
                                     <td><?php echo htmlspecialchars($booking['check_in_date']); ?></td>
@@ -1148,7 +1252,7 @@ if ($manager_id !== null) {
                 <?php
                 if ($hostel_exists) {
                     $stmt_confirmed = $conn->prepare("
-                        SELECT b.*, u.username as student_name, u.email as student_email, 
+                        SELECT b.*, COALESCE(b.full_name, u.username) as student_name, u.email as student_email, 
                             r.room_type, r.price_per_semester,
                             (SELECT ra.assigned_room_number FROM room_assignments ra WHERE ra.booking_id = b.id LIMIT 1) as room_number
                         FROM bookings b
@@ -1187,9 +1291,13 @@ if ($manager_id !== null) {
                                 ?>
                                     <tr>
                                         <td>
-                                            <?php echo htmlspecialchars($booking['student_name']); ?><br>
+                                            <?php 
+                                            $name_parts = explode(' ', $booking['student_name']);
+                                            echo htmlspecialchars(implode(' ', $name_parts)); 
+                                            ?><br>
                                             <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                         </td>
+
                                         <td><?php echo htmlspecialchars($booking['room_type']); ?></td>
                                         <td>
                                             <?php if (!empty($booking['room_number'])): ?>
@@ -1209,16 +1317,31 @@ if ($manager_id !== null) {
                                             </span>
                                         </td>
                                         <td>
+                                            <?php if (!empty($booking['room_number'])): ?>
                                             <form action="../../../controllers/booking/update_booking.php" method="POST" style="display:inline;">
                                                 <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
                                                 <input type="hidden" name="action" value="complete">
                                                 <button type="submit" class="btn-complete">Mark Complete</button>
                                             </form>
+                                            <?php else: ?>
+                                            <button class="btn-complete" disabled title="Room must be assigned first">Mark Complete</button>
+                                            <?php endif; ?>
+                                            <?php 
+                                            // Check if cancellation is allowed
+                                            $booking_time = strtotime($booking['booking_date']);
+                                            $current_time = time();
+                                            $hours_since_booking = ($current_time - $booking_time) / 3600;
+                                            $can_cancel = $hours_since_booking <= 24 && empty($booking['room_number']);
+                                            ?>
+                                            <?php if ($can_cancel): ?>
                                             <form action="../../../controllers/booking/update_booking.php" method="POST" style="display:inline;">
                                                 <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
                                                 <input type="hidden" name="action" value="cancel">
                                                 <button type="submit" class="btn-cancel">Cancel</button>
                                             </form>
+                                            <?php else: ?>
+                                            <span class="text-muted" title="<?php echo !empty($booking['room_number']) ? 'Cannot cancel - room assigned' : 'Cannot cancel - 24hr window expired'; ?>">No Refund</span>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                 <?php endwhile; ?>
@@ -1240,13 +1363,14 @@ if ($manager_id !== null) {
                 <?php
                 if ($hostel_exists) {
                     $stmt_cancelled = $conn->prepare("
-                        SELECT b.*, u.username as student_name, u.email as student_email, 
+                        SELECT b.*, COALESCE(b.full_name, u.username) as student_name, u.email as student_email, 
                             r.room_type, r.price_per_semester
                         FROM bookings b
                         JOIN users u ON b.user_id = u.id
                         JOIN rooms r ON b.room_id = r.id
                         WHERE b.hostel_id = ? AND b.status = 'Cancelled'
                         ORDER BY b.booking_date DESC
+
                     ");
                     $stmt_cancelled->bind_param("i", $hostel['id']);
                     $stmt_cancelled->execute();
@@ -1269,9 +1393,13 @@ if ($manager_id !== null) {
                                 <?php while ($booking = $result_cancelled->fetch_assoc()): ?>
                                     <tr>
                                         <td>
-                                            <?php echo htmlspecialchars($booking['student_name']); ?><br>
+                                            <?php 
+                                            $name_parts = explode(' ', $booking['student_name']);
+                                            echo htmlspecialchars(implode(' ', $name_parts)); 
+                                            ?><br>
                                             <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                         </td>
+
                                         <td><?php echo htmlspecialchars($booking['room_type']); ?></td>
                                         <td><?php echo htmlspecialchars($booking['check_in_date']); ?></td>
                                         <td><?php echo htmlspecialchars($booking['check_out_date']); ?></td>
@@ -1297,9 +1425,10 @@ if ($manager_id !== null) {
                 <?php
                 if ($hostel_exists) {
                     $stmt_completed = $conn->prepare("
-                        SELECT b.*, u.username as student_name, u.email as student_email, 
+                        SELECT b.*, COALESCE(b.full_name, u.username) as student_name, u.email as student_email, 
                             r.room_type, r.price_per_semester,
-                            (SELECT ra.assigned_room_number FROM room_assignments ra WHERE ra.booking_id = b.id LIMIT 1) as room_number
+                            (SELECT ra.assigned_room_number FROM room_assignments ra WHERE ra.booking_id = b.id LIMIT 1) as room_number,
+                            b.booking_date as completion_time
                         FROM bookings b
                         JOIN users u ON b.user_id = u.id
                         JOIN rooms r ON b.room_id = r.id
@@ -1321,20 +1450,47 @@ if ($manager_id !== null) {
                                     <th>Check-in</th>
                                     <th>Check-out</th>
                                     <th>Completed Date</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php while ($booking = $result_completed->fetch_assoc()): ?>
+                                <?php while ($booking = $result_completed->fetch_assoc()): 
+                                    $completed_time = strtotime($booking['completion_time']);
+                                    $current_time = time();
+                                    $hours_since_completion = ($current_time - $completed_time) / 3600;
+                                    $can_undo = $hours_since_completion <= 24;
+                                ?>
                                     <tr>
                                         <td>
-                                            <?php echo htmlspecialchars($booking['student_name']); ?><br>
+                                            <?php 
+                                            $name_parts = explode(' ', $booking['student_name']);
+                                            echo htmlspecialchars(implode(' ', $name_parts)); 
+                                            ?><br>
                                             <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                         </td>
+
                                         <td><?php echo htmlspecialchars($booking['room_type']); ?></td>
                                         <td><?php echo htmlspecialchars($booking['room_number'] ?? 'Not assigned'); ?></td>
                                         <td><?php echo htmlspecialchars($booking['check_in_date']); ?></td>
                                         <td><?php echo htmlspecialchars($booking['check_out_date']); ?></td>
                                         <td><?php echo htmlspecialchars(date('Y-m-d', strtotime($booking['booking_date']))); ?></td>
+                                        <td>
+                                            <?php if ($can_undo): 
+                                                $hours_remaining = 24 - $hours_since_completion;
+                                                $time_remaining = $hours_remaining > 1 ? 
+                                                    round($hours_remaining) . ' hours' : 
+                                                    round($hours_remaining * 60) . ' minutes';
+                                            ?>
+                                            <form action="../../../controllers/booking/update_booking.php" method="POST" style="display:inline;">
+                                                <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
+                                                <input type="hidden" name="action" value="undo_complete">
+                                                <button type="submit" class="btn-undo" onclick="return confirm('Are you sure you want to undo this completion?')">Undo</button>
+                                            </form>
+                                            <br><small class="undo-timer">⏰ <?php echo $time_remaining; ?> left</small>
+                                            <?php else: ?>
+                                            <span class="text-muted" title="Undo period expired (24 hours)">Expired</span>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endwhile; ?>
                             </tbody>
@@ -1359,7 +1515,7 @@ if ($manager_id !== null) {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: `action=toggle_auto_process&hostel_id=<?php echo $hostel['id']; ?>&enabled=${this.checked ? '1' : '0'}`
+                    body: `action=toggle_auto_process&hostel_id=<?php echo $hostel_exists ? $hostel['id'] : '0'; ?>&enabled=${this.checked ? '1' : '0'}`
                 })
                 .then(response => response.json())
                 .then(data => {
@@ -1399,31 +1555,31 @@ if ($manager_id !== null) {
                         <div class="payment-methods-grid">
                             <div class="payment-method-item">
                                 <input type="checkbox" id="method_mtn" name="payment_methods[]" value="MTN Mobile Money" 
-                                    <?php echo isPaymentMethodActive($conn, $hostel['id'], 'MTN Mobile Money') ? 'checked' : ''; ?>>
+                                    <?php echo ($hostel_exists && isPaymentMethodActive($conn, $hostel['id'], 'MTN Mobile Money')) ? 'checked' : ''; ?>>
                                 <label for="method_mtn">MTN Mobile Money</label>
                             </div>
                             <div class="payment-method-item">
                                 <input type="checkbox" id="method_airtel" name="payment_methods[]" value="Airtel Money" 
-                                    <?php echo isPaymentMethodActive($conn, $hostel['id'], 'Airtel Money') ? 'checked' : ''; ?>>
+                                    <?php echo ($hostel_exists && isPaymentMethodActive($conn, $hostel['id'], 'Airtel Money')) ? 'checked' : ''; ?>>
                                 <label for="method_airtel">Airtel Money</label>
                             </div>
                             <div class="payment-method-item">
                                 <input type="checkbox" id="method_card" name="payment_methods[]" value="Credit/Debit Card" 
-                                    <?php echo isPaymentMethodActive($conn, $hostel['id'], 'Credit/Debit Card') ? 'checked' : ''; ?>>
+                                    <?php echo ($hostel_exists && isPaymentMethodActive($conn, $hostel['id'], 'Credit/Debit Card')) ? 'checked' : ''; ?>>
                                 <label for="method_card">Credit/Debit Card</label>
                             </div>
                             <div class="payment-method-item">
                                 <input type="checkbox" id="method_bank" name="payment_methods[]" value="Bank Transfer" 
-                                    <?php echo isPaymentMethodActive($conn, $hostel['id'], 'Bank Transfer') ? 'checked' : ''; ?>>
+                                    <?php echo ($hostel_exists && isPaymentMethodActive($conn, $hostel['id'], 'Bank Transfer')) ? 'checked' : ''; ?>>
                                 <label for="method_bank">Bank Transfer</label>
                             </div>
                             <div class="payment-method-item">
                                 <input type="checkbox" id="method_cash" name="payment_methods[]" value="Cash" 
-                                    <?php echo isPaymentMethodActive($conn, $hostel['id'], 'Cash') ? 'checked' : ''; ?>>
+                                    <?php echo ($hostel_exists && isPaymentMethodActive($conn, $hostel['id'], 'Cash')) ? 'checked' : ''; ?>>
                                 <label for="method_cash">Cash</label>
                             </div>
                         </div>
-                        <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                        <input type="hidden" name="hostel_id" value="<?php echo $hostel_exists ? $hostel['id'] : '0'; ?>">
                         <button type="submit" class="btn-primary">Save Payment Methods</button>
                     </form>
                 </div>
@@ -1433,17 +1589,17 @@ if ($manager_id !== null) {
                     <h3>Payment Transactions</h3>
                     
                     <div class="payment-tabs">
-                        <button class="payment-tab active" onclick="showPaymentTab('pending', event)">Pending</button>
-                        <button class="payment-tab" onclick="showPaymentTab('completed', event)">Completed</button>
-                        <button class="payment-tab" onclick="showPaymentTab('failed', event)">Failed</button>
-                        <button class="payment-tab" onclick="showPaymentTab('refunded', event)">Refunded</button>
+                        <button class="payment-tab active" onclick="showPaymentTab('pending', event)">Pending <?php if ($pending_payments > 0): ?><span class="tab-badge"><?php echo $pending_payments; ?></span><?php endif; ?></button>
+                        <button class="payment-tab" onclick="showPaymentTab('completed', event)">Completed <?php if ($completed_payments > 0): ?><span class="tab-badge"><?php echo $completed_payments; ?></span><?php endif; ?></button>
+                        <button class="payment-tab" onclick="showPaymentTab('failed', event)">Failed <?php if ($failed_payments > 0): ?><span class="tab-badge tab-badge-danger"><?php echo $failed_payments; ?></span><?php endif; ?></button>
+                        <button class="payment-tab" onclick="showPaymentTab('refunded', event)">Refunded <?php if ($refunded_payments > 0): ?><span class="tab-badge tab-badge-warning"><?php echo $refunded_payments; ?></span><?php endif; ?></button>
                     </div>
                     
                     <div id="pending-payments" class="payment-content active">
                         <?php
                         $stmt_pending = $conn->prepare("
                             SELECT p.*, b.check_in_date, b.check_out_date, 
-                                u.username as student_name, u.email as student_email,
+                                COALESCE(b.full_name, u.username) as student_name, u.email as student_email,
                                 r.room_type
                             FROM payments p
                             JOIN bookings b ON p.booking_id = b.id
@@ -1452,11 +1608,15 @@ if ($manager_id !== null) {
                             WHERE p.hostel_id = ? AND p.status = 'Pending'
                             ORDER BY p.payment_date DESC
                         ");
-                        $stmt_pending->bind_param("i", $hostel['id']);
-                        $stmt_pending->execute();
-                        $result_pending = $stmt_pending->get_result();
+                        if ($hostel_exists && isset($hostel['id'])) {
+                            $stmt_pending->bind_param("i", $hostel['id']);
+                            $stmt_pending->execute();
+                            $result_pending = $stmt_pending->get_result();
+                        } else {
+                            $result_pending = null;
+                        }
                         
-                        if ($result_pending->num_rows > 0):
+                        if ($result_pending && $result_pending->num_rows > 0):
                         ?>
                         <table class="payments-table">
                             <thead>
@@ -1473,9 +1633,13 @@ if ($manager_id !== null) {
                                 <?php while ($payment = $result_pending->fetch_assoc()): ?>
                                 <tr>
                                     <td>
-                                        <?php echo htmlspecialchars($payment['student_name']); ?><br>
-                                        <small><?php echo htmlspecialchars($payment['student_email']); ?></small>
+                                        <?php 
+                                        $name_parts = explode(' ', $booking['student_name']);
+                                        echo htmlspecialchars(implode(' ', $name_parts)); 
+                                        ?><br>
+                                        <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                     </td>
+
                                     <td><?php echo htmlspecialchars($payment['room_type']); ?></td>
                                     <td><?php echo htmlspecialchars(number_format($payment['amount'], 2)); ?> UGX</td>
                                     <td><?php echo htmlspecialchars($payment['payment_method']); ?></td>
@@ -1500,7 +1664,7 @@ if ($manager_id !== null) {
                         <p>No pending payments.</p>
                         <?php 
                         endif;
-                        $stmt_pending->close();
+                        if (isset($stmt_pending)) $stmt_pending->close();
                         ?>
                     </div>
                     
@@ -1508,7 +1672,7 @@ if ($manager_id !== null) {
                         <?php
                         $stmt_completed = $conn->prepare("
                             SELECT p.*, b.check_in_date, b.check_out_date, 
-                                u.username as student_name, u.email as student_email,
+                                COALESCE(b.full_name, u.username) as student_name, u.email as student_email,
                                 r.room_type
                             FROM payments p
                             JOIN bookings b ON p.booking_id = b.id
@@ -1538,9 +1702,13 @@ if ($manager_id !== null) {
                                 <?php while ($payment = $result_completed->fetch_assoc()): ?>
                                 <tr>
                                     <td>
-                                        <?php echo htmlspecialchars($payment['student_name']); ?><br>
-                                        <small><?php echo htmlspecialchars($payment['student_email']); ?></small>
+                                        <?php 
+                                        $name_parts = explode(' ', $booking['student_name']);
+                                        echo htmlspecialchars(implode(' ', $name_parts)); 
+                                        ?><br>
+                                        <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                     </td>
+
                                     <td><?php echo htmlspecialchars($payment['room_type']); ?></td>
                                     <td><?php echo htmlspecialchars(number_format($payment['amount'], 2)); ?> UGX</td>
                                     <td><?php echo htmlspecialchars($payment['payment_method']); ?></td>
@@ -1568,7 +1736,7 @@ if ($manager_id !== null) {
                         <?php
                         $stmt_failed = $conn->prepare("
                             SELECT p.*, b.check_in_date, b.check_out_date, 
-                                u.username as student_name, u.email as student_email,
+                                COALESCE(b.full_name, u.username) as student_name, u.email as student_email,
                                 r.room_type
                             FROM payments p
                             JOIN bookings b ON p.booking_id = b.id
@@ -1598,9 +1766,13 @@ if ($manager_id !== null) {
                                 <?php while ($payment = $result_failed->fetch_assoc()): ?>
                                 <tr>
                                     <td>
-                                        <?php echo htmlspecialchars($payment['student_name']); ?><br>
-                                        <small><?php echo htmlspecialchars($payment['student_email']); ?></small>
+                                        <?php 
+                                        $name_parts = explode(' ', $booking['student_name']);
+                                        echo htmlspecialchars(implode(' ', $name_parts)); 
+                                        ?><br>
+                                        <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                     </td>
+
                                     <td><?php echo htmlspecialchars($payment['room_type']); ?></td>
                                     <td><?php echo htmlspecialchars(number_format($payment['amount'], 2)); ?> UGX</td>
                                     <td><?php echo htmlspecialchars($payment['payment_method']); ?></td>
@@ -1629,7 +1801,7 @@ if ($manager_id !== null) {
                         <?php
                         $stmt_refunded = $conn->prepare("
                             SELECT p.*, b.check_in_date, b.check_out_date, 
-                                u.username as student_name, u.email as student_email,
+                                COALESCE(b.full_name, u.username) as student_name, u.email as student_email,
                                 r.room_type
                             FROM payments p
                             JOIN bookings b ON p.booking_id = b.id
@@ -1659,8 +1831,11 @@ if ($manager_id !== null) {
                                 <?php while ($payment = $result_refunded->fetch_assoc()): ?>
                                 <tr>
                                     <td>
-                                        <?php echo htmlspecialchars($payment['student_name']); ?><br>
-                                        <small><?php echo htmlspecialchars($payment['student_email']); ?></small>
+                                        <?php 
+                                        $name_parts = explode(' ', $booking['student_name']);
+                                        echo htmlspecialchars(implode(' ', $name_parts)); 
+                                        ?><br>
+                                        <small><?php echo htmlspecialchars($booking['student_email']); ?></small>
                                     </td>
                                     <td><?php echo htmlspecialchars($payment['room_type']); ?></td>
                                     <td><?php echo htmlspecialchars(number_format($payment['amount'], 2)); ?> UGX</td>
@@ -1677,14 +1852,13 @@ if ($manager_id !== null) {
                         endif;
                         $stmt_refunded->close();
                         ?>
+                    </div>
                 </div>
                 
-            
             <?php else: ?>
                 <p>Please add your hostel details first to manage payments.</p>
             <?php endif; ?>
         </section>
-
 
         <section id="notifications">
             <h2>🔔 Notifications & Alerts</h2>
@@ -1712,10 +1886,15 @@ if ($manager_id !== null) {
             
             <div class="notifications-list">
                 <?php while ($notification = $result_notifications->fetch_assoc()): ?>
-                <div class="notification-card <?php echo $notification['is_read'] ? 'read' : 'unread'; ?>" id="notification-<?php echo $notification['id']; ?>">
+                <div class="notification-card <?php echo $notification['is_read'] ? 'read archived' : 'unread'; ?>" id="notification-<?php echo $notification['id']; ?>" style="<?php echo $notification['is_read'] ? 'opacity: 0.7;' : ''; ?>">
                     <div class="notification-header">
                         <h3><?php echo htmlspecialchars($notification['title']); ?></h3>
-                        <span class="notification-time"><?php echo timeAgo($notification['created_at']); ?></span>
+                        <div class="d-flex align-items-center gap-2">
+                            <?php if ($notification['is_read']): ?>
+                            <span class="badge bg-secondary">Archived</span>
+                            <?php endif; ?>
+                            <span class="notification-time"><?php echo timeAgo($notification['created_at']); ?></span>
+                        </div>
                     </div>
                     <div class="notification-body">
                         <p><?php echo htmlspecialchars($notification['message']); ?></p>
@@ -1734,9 +1913,17 @@ if ($manager_id !== null) {
                         <?php endif; ?>
                     </div>
                     <div class="notification-footer">
-                        <button class="btn-text" onclick="markNotificationAsRead(<?php echo $notification['id']; ?>)">
-                            <?php echo $notification['is_read'] ? 'Mark as Unread' : 'Mark as Read'; ?>
+                        <?php if ($notification['is_read']): ?>
+                        <button class="btn-text read-status-btn is-read" disabled>
+                            <span class="read-icon"><i class="fas fa-archive"></i></span>
+                            <span class="read-text">Archived</span>
                         </button>
+                        <?php else: ?>
+                        <button class="btn-text read-status-btn is-unread" onclick="markNotificationAsRead(<?php echo $notification['id']; ?>)">
+                            <span class="read-icon"><i class="fas fa-eye"></i></span>
+                            <span class="read-text">Mark as Read</span>
+                        </button>
+                        <?php endif; ?>
                         <button class="btn-text text-danger" onclick="deleteNotification(<?php echo $notification['id']; ?>)">Delete</button>
                     </div>
                 </div>
@@ -1846,6 +2033,37 @@ if ($manager_id !== null) {
             display: flex;
             justify-content: space-between;
         }
+        
+        /* Stylish read status button */
+        .read-status-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s ease;
+            border-radius: 20px;
+            padding: 5px 12px;
+        }
+        
+        .read-status-btn.is-read {
+            background-color: #f0f0f0;
+            color: #666;
+        }
+        
+        .read-status-btn.is-unread {
+            background-color: #e8f4ff;
+            color: #0066cc;
+        }
+        
+        .read-status-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .read-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
 
         .notification-actions {
             display: flex;
@@ -1895,6 +2113,28 @@ if ($manager_id !== null) {
         .form-group {
             margin-bottom: 15px;
         }
+        
+        .btn-undo {
+            background-color: #ffc107;
+            color: #212529;
+            border: 1px solid #ffc107;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .btn-undo:hover {
+            background-color: #e0a800;
+            border-color: #d39e00;
+        }
+        
+        .undo-timer {
+            color: #666;
+            font-style: italic;
+            margin-top: 5px;
+            display: block;
+        }
         </style>
 
         <script>
@@ -1911,17 +2151,39 @@ if ($manager_id !== null) {
                 if (data.success) {
                     const notification = document.getElementById('notification-' + notificationId);
                     if (notification) {
-                        if (data.is_read) {
-                            notification.classList.remove('unread');
-                            notification.classList.add('read');
-                            notification.querySelector('.btn-text').textContent = 'Mark as Unread';
-                        } else {
-                            notification.classList.remove('read');
-                            notification.classList.add('unread');
-                            notification.querySelector('.btn-text').textContent = 'Mark as Read';
+                        // Mark as archived
+                        notification.classList.remove('unread');
+                        notification.classList.add('read', 'archived');
+                        notification.style.opacity = '0.7';
+                        
+                        const button = notification.querySelector('.read-status-btn');
+                        const icon = notification.querySelector('.read-icon i');
+                        const text = notification.querySelector('.read-text');
+                        
+                        button.classList.remove('is-unread');
+                        button.classList.add('is-read');
+                        button.disabled = true;
+                        icon.classList.remove('fa-eye');
+                        icon.classList.add('fa-archive');
+                        text.textContent = 'Archived';
+                        
+                        // Add archived badge
+                        const header = notification.querySelector('.notification-header');
+                        if (!header.querySelector('.badge')) {
+                            const badge = document.createElement('span');
+                            badge.className = 'badge bg-secondary';
+                            badge.textContent = 'Archived';
+                            header.querySelector('.d-flex').appendChild(badge);
                         }
                     }
+                } else {
+                    console.error('Error updating notification:', data.message);
+                    alert('Error: ' + data.message);
                 }
+            })
+            .catch(error => {
+                console.error('Network error:', error);
+                alert('Network error. Please try again.');
             });
         }
 
@@ -1935,7 +2197,16 @@ if ($manager_id !== null) {
                     document.querySelectorAll('.notification-card.unread').forEach(card => {
                         card.classList.remove('unread');
                         card.classList.add('read');
-                        card.querySelector('.btn-text').textContent = 'Mark as Unread';
+                        
+                        const button = card.querySelector('.read-status-btn');
+                        const icon = card.querySelector('.read-icon i');
+                        const text = card.querySelector('.read-text');
+                        
+                        button.classList.remove('is-unread');
+                        button.classList.add('is-read');
+                        icon.classList.remove('fa-eye');
+                        icon.classList.add('fa-eye-slash');
+                        text.textContent = 'Mark as Unread';
                     });
                 }
             });
@@ -2017,8 +2288,526 @@ if ($manager_id !== null) {
 
         <section id="reports">
             <h2>📊 Reports & Downloads</h2>
-            <p>Reports will be available soon.</p>
+            
+            <?php if ($hostel_exists): ?>
+                <!-- Charts Section -->
+                <div class="charts-section">
+                    <h3>📈 Analytics Dashboard</h3>
+                    <div class="charts-grid">
+                        <div class="chart-card">
+                            <h4>Booking Status Distribution</h4>
+                            <canvas id="bookingChart" width="300" height="200"></canvas>
+                        </div>
+                        <div class="chart-card">
+                            <h4>Monthly Revenue Trend</h4>
+                            <canvas id="revenueChart" width="300" height="200"></canvas>
+                        </div>
+                        <div class="chart-card">
+                            <h4>Room Occupancy</h4>
+                            <canvas id="occupancyChart" width="300" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="reports-grid">
+                    <!-- Quick Stats -->
+                    <div class="report-card">
+                        <h3><i class="fas fa-chart-line"></i> Quick Statistics</h3>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-number"><?php echo $total_bookings; ?></span>
+                                <span class="stat-label">Total Bookings</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-number"><?php echo number_format($total_amount); ?></span>
+                                <span class="stat-label">Total Revenue (UGX)</span>
+                                <?php if ($failed_amount > 0): ?>
+                                <small style="color: #dc3545; display: block; margin-top: 5px;">
+                                    Failed: <?php echo number_format($failed_amount); ?> UGX
+                                </small>
+                                <?php endif; ?>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-number"><?php echo round(($occupied_rooms / max($total_rooms, 1)) * 100); ?>%</span>
+                                <span class="stat-label">Occupancy Rate</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Booking Reports -->
+                    <div class="report-card">
+                        <h3><i class="fas fa-calendar-alt"></i> Booking Reports</h3>
+                        <form action="../../../controllers/reports/generate_report.php" method="POST" target="_blank">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="report_type" value="bookings">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>From Date:</label>
+                                    <input type="date" name="start_date" value="<?php echo date('Y-m-01'); ?>">
+                                </div>
+                                <div class="form-group">
+                                    <label>To Date:</label>
+                                    <input type="date" name="end_date" value="<?php echo date('Y-m-t'); ?>">
+                                </div>
+                            </div>
+                            <div class="report-buttons">
+                                <button type="button" onclick="previewReport('bookings', this.form)" class="btn-preview"><i class="fas fa-eye"></i> Preview</button>
+                                <button type="submit" name="format" value="pdf" class="btn-report"><i class="fas fa-file-pdf"></i> PDF</button>
+                                <button type="submit" name="format" value="csv" class="btn-report"><i class="fas fa-file-csv"></i> CSV</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Financial Reports -->
+                    <div class="report-card">
+                        <h3><i class="fas fa-money-bill-wave"></i> Financial Reports</h3>
+                        <form action="../../../controllers/reports/generate_report.php" method="POST" target="_blank">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="report_type" value="financial">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>From Date:</label>
+                                    <input type="date" name="start_date" value="<?php echo date('Y-m-01'); ?>">
+                                </div>
+                                <div class="form-group">
+                                    <label>To Date:</label>
+                                    <input type="date" name="end_date" value="<?php echo date('Y-m-t'); ?>">
+                                </div>
+                            </div>
+                            <div class="report-buttons">
+                                <button type="submit" name="format" value="pdf" class="btn-report"><i class="fas fa-file-pdf"></i> PDF</button>
+                                <button type="submit" name="format" value="csv" class="btn-report"><i class="fas fa-file-csv"></i> CSV</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Occupancy Reports -->
+                    <div class="report-card">
+                        <h3><i class="fas fa-bed"></i> Occupancy Reports</h3>
+                        <form action="../../../controllers/reports/generate_report.php" method="POST" target="_blank">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="report_type" value="occupancy">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Month:</label>
+                                    <input type="month" name="month" value="<?php echo date('Y-m'); ?>">
+                                </div>
+                            </div>
+                            <div class="report-buttons">
+                                <button type="submit" name="format" value="pdf" class="btn-report"><i class="fas fa-file-pdf"></i> PDF</button>
+                                <button type="submit" name="format" value="csv" class="btn-report"><i class="fas fa-file-csv"></i> CSV</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Student Reports -->
+                    <div class="report-card">
+                        <h3><i class="fas fa-users"></i> Student Reports</h3>
+                        <form action="../../../controllers/reports/generate_report.php" method="POST" target="_blank">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="report_type" value="students">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Status:</label>
+                                    <select name="status">
+                                        <option value="all">All Students</option>
+                                        <option value="active">Active Residents</option>
+                                        <option value="checked_out">Checked Out</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="report-buttons">
+                                <button type="submit" name="format" value="pdf" class="btn-report"><i class="fas fa-file-pdf"></i> PDF</button>
+                                <button type="submit" name="format" value="csv" class="btn-report"><i class="fas fa-file-csv"></i> CSV</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Custom Reports -->
+                    <div class="report-card">
+                        <h3><i class="fas fa-cog"></i> Custom Reports</h3>
+                        <form action="../../../controllers/reports/generate_report.php" method="POST" target="_blank">
+                            <input type="hidden" name="hostel_id" value="<?php echo $hostel['id']; ?>">
+                            <input type="hidden" name="report_type" value="custom">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Report Type:</label>
+                                    <select name="custom_type">
+                                        <option value="monthly_summary">Monthly Summary</option>
+                                        <option value="payment_status">Payment Status</option>
+                                        <option value="room_utilization">Room Utilization</option>
+                                        <option value="booking_trends">Booking Trends</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>From Date:</label>
+                                    <input type="date" name="start_date" value="<?php echo date('Y-m-01'); ?>">
+                                </div>
+                                <div class="form-group">
+                                    <label>To Date:</label>
+                                    <input type="date" name="end_date" value="<?php echo date('Y-m-t'); ?>">
+                                </div>
+                            </div>
+                            <div class="report-buttons">
+                                <button type="submit" name="format" value="pdf" class="btn-report"><i class="fas fa-file-pdf"></i> PDF</button>
+                                <button type="submit" name="format" value="csv" class="btn-report"><i class="fas fa-file-csv"></i> CSV</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Report Preview Modal -->
+                <div id="reportModal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Report Preview</h3>
+                            <span class="close" onclick="closeModal()">&times;</span>
+                        </div>
+                        <div class="modal-body">
+                            <iframe id="reportFrame" width="100%" height="600px"></iframe>
+                        </div>
+                        <div class="modal-footer">
+                            <button onclick="downloadCurrentReport()" class="btn-download">Download PDF</button>
+                            <button onclick="closeModal()" class="btn-close">Close</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recent Reports -->
+                <div class="recent-reports">
+                    <h3>Recent Downloads</h3>
+                    <div class="reports-history">
+                        <p><i class="fas fa-info-circle"></i> Your downloaded reports will appear here.</p>
+                    </div>
+                </div>
+                
+            <?php else: ?>
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-chart-bar"></i>
+                    </div>
+                    <h3>No Reports Available</h3>
+                    <p>Please add your hostel details first to generate reports.</p>
+                    <a href="#hostel" class="action-button tab-link" onclick="openTab(event, 'hostel')">Add Hostel Details</a>
+                </div>
+            <?php endif; ?>
         </section>
+        
+        <style>
+        .reports-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .report-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .report-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .report-card h3 {
+            margin-top: 0;
+            color: #2d3a4c;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .stat-number {
+            display: block;
+            font-size: 24px;
+            font-weight: bold;
+            color: #2d3a4c;
+        }
+        
+        .stat-label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #2d3a4c;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .report-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn-report {
+            flex: 1;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+        
+        .btn-report:first-child {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-report:first-child:hover {
+            background-color: #c82333;
+        }
+        
+        .btn-report:last-child {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-report:last-child:hover {
+            background-color: #218838;
+        }
+        
+        .recent-reports {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .recent-reports h3 {
+            margin-top: 0;
+            color: #2d3a4c;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+        }
+        
+        .reports-history {
+            padding: 20px;
+            text-align: center;
+            color: #666;
+        }
+        
+        .charts-section {
+            margin-bottom: 30px;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .chart-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            height: 300px;
+        }
+        
+        .chart-card canvas {
+            max-height: 250px !important;
+        }
+        
+        .tab-badge {
+            background-color: #17a2b8;
+            color: white;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 11px;
+            margin-left: 5px;
+            font-weight: bold;
+        }
+        
+        .tab-badge-danger {
+            background-color: #dc3545;
+        }
+        
+        .tab-badge-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 2% auto;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 1000px;
+            height: 90%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            flex: 1;
+            padding: 20px;
+            overflow: auto;
+        }
+        
+        .btn-preview {
+            background-color: #17a2b8;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        </style>
+        
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script>
+        const chartData = {
+            bookings: {
+                pending: <?php echo $pending_bookings; ?>,
+                confirmed: <?php echo $confirmed_bookings; ?>,
+                completed: <?php echo $completed_bookings; ?>
+            },
+            occupancy: {
+                occupied: <?php echo $occupied_rooms; ?>,
+                available: <?php echo $available_rooms; ?>
+            }
+        };
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('bookingChart')) {
+                new Chart(document.getElementById('bookingChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Pending', 'Confirmed', 'Completed'],
+                        datasets: [{
+                            data: [chartData.bookings.pending, chartData.bookings.confirmed, chartData.bookings.completed],
+                            backgroundColor: ['#ffc107', '#17a2b8', '#28a745']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+            
+            if (document.getElementById('occupancyChart')) {
+                new Chart(document.getElementById('occupancyChart'), {
+                    type: 'pie',
+                    data: {
+                        labels: ['Occupied', 'Available'],
+                        datasets: [{
+                            data: [chartData.occupancy.occupied, chartData.occupancy.available],
+                            backgroundColor: ['#dc3545', '#28a745']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+            
+            if (document.getElementById('revenueChart')) {
+                new Chart(document.getElementById('revenueChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['This Month'],
+                        datasets: [{
+                            label: 'Revenue (UGX)',
+                            data: [<?php echo $total_amount; ?>],
+                            backgroundColor: '#28a745'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+        });
+        
+        function previewReport(reportType, form) {
+            const formData = new FormData(form);
+            formData.append('format', 'preview');
+            
+            fetch('../../../controllers/reports/generate_report.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('reportFrame').srcdoc = html;
+                document.getElementById('reportModal').style.display = 'block';
+            });
+        }
+        
+        function closeModal() {
+            document.getElementById('reportModal').style.display = 'none';
+        }
+        </script>
 
         <section id="profile">
             <h2>👤 Profile Management</h2>

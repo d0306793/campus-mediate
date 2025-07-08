@@ -224,6 +224,44 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST'){
             transition: none !important;
         }
     }
+    
+    /* Login pointer animation */
+    @keyframes pointToLogin {
+        0% {
+            transform: translateX(0);
+            opacity: 0.7;
+        }
+        50% {
+            transform: translateX(-10px);
+            opacity: 1;
+        }
+        100% {
+            transform: translateX(0);
+            opacity: 0.7;
+        }
+    }
+    
+    .login-pointer {
+        display: inline-block;
+        color: var(--primary-purple);
+        font-size: 1.2rem;
+        margin-right: 5px;
+        animation: pointToLogin 1.5s infinite ease-in-out;
+    }
+    
+    .sticky-login-hint {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: white;
+        padding: 10px 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        border-left: 4px solid var(--primary-purple);
+        z-index: 100;
+        display: flex;
+        align-items: center;
+    }
     </style>
 </head>
 <body>
@@ -295,7 +333,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST'){
         </form>
 
         <div class="form-footer">
-            Already have an account? <a href="login.php">Sign in</a>
+            <span class="login-pointer">→</span> Already have an account? <a href="login.php">Sign in</a>
+        </div>
+        
+        <div class="sticky-login-hint">
+            <span class="login-pointer">→</span>
+            <span>Already registered? <a href="login.php">Sign in here</a></span>
         </div>
     </div>
 </body>

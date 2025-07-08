@@ -69,10 +69,12 @@ $user_id = getUserIdFromEmail($conn, $user_email);
 
 // Get student's bookings
 $stmt_bookings = $conn->prepare("
-    SELECT b.*, h.name as hostel_name, r.room_type, r.price_per_semester
+    SELECT b.*, h.name as hostel_name, r.room_type, r.price_per_semester,
+           COALESCE(b.full_name, u.username) as student_name
     FROM bookings b
     JOIN hostels h ON b.hostel_id = h.id
     JOIN rooms r ON b.room_id = r.id
+    JOIN users u ON b.user_id = u.id
     WHERE b.user_id = ?
     ORDER BY b.booking_date DESC
 ");
@@ -87,14 +89,17 @@ $stmt_bookings->close();
 
 // Get student's payments
 $stmt_payments = $conn->prepare("
-    SELECT p.*, b.check_in_date, b.check_out_date, h.name as hostel_name, r.room_type
+    SELECT p.*, b.check_in_date, b.check_out_date, h.name as hostel_name, r.room_type,
+           COALESCE(b.full_name, u.username) as student_name
     FROM payments p
     JOIN bookings b ON p.booking_id = b.id
     JOIN hostels h ON p.hostel_id = h.id
     JOIN rooms r ON b.room_id = r.id
+    JOIN users u ON b.user_id = u.id
     WHERE p.user_id = ?
     ORDER BY p.payment_date DESC
 ");
+
 $stmt_payments->bind_param("i", $user_id);
 $stmt_payments->execute();
 $result_payments = $stmt_payments->get_result();
@@ -104,11 +109,11 @@ while ($row = $result_payments->fetch_assoc()) {
 }
 $stmt_payments->close();
 
-// Get notifications
+// Get all notifications (both read and unread)
 $stmt_notifications = $conn->prepare("
     SELECT * FROM notifications
-    WHERE recipient_id = ? AND is_read = 0
-    ORDER BY created_at DESC
+    WHERE recipient_id = ?
+    ORDER BY is_read ASC, created_at DESC
 ");
 $stmt_notifications->bind_param("i", $user_id);
 $stmt_notifications->execute();
@@ -117,18 +122,34 @@ $notifications = [];
 $notification_count = 0;
 while ($row = $result_notifications->fetch_assoc()) {
     $notifications[] = $row;
-    $notification_count++;
+    if ($row['is_read'] == 0) {
+        $notification_count++;
+    }
 }
 $stmt_notifications->close();
 
-// Get available hostels
+// Get available hostels with correct room availability calculation
+$current_date = date('Y-m-d');
 $stmt_hostels = $conn->prepare("
     SELECT h.*, 
-           (SELECT COUNT(*) FROM rooms r WHERE r.hostel_id = h.id AND r.status = 'Available') as available_rooms
+           COALESCE((
+               SELECT 
+                   SUM(CASE WHEN r.quantity IS NOT NULL THEN r.quantity ELSE 1 END) - 
+                   COALESCE((
+                       SELECT COUNT(*) FROM bookings b 
+                       WHERE b.hostel_id = h.id AND b.status IN ('Confirmed') 
+                       AND b.check_in_date <= ?
+                   ), 0) - 
+                   SUM(CASE WHEN r.status = 'Occupied' THEN 
+                       (CASE WHEN r.quantity IS NOT NULL THEN r.quantity ELSE 1 END) 
+                       ELSE 0 END)
+               FROM rooms r WHERE r.hostel_id = h.id AND r.status = 'Available'
+           ), 0) as available_rooms
     FROM hostels h
     WHERE h.status = 'Active'
     ORDER BY available_rooms DESC
 ");
+$stmt_hostels->bind_param("s", $current_date);
 $stmt_hostels->execute();
 $result_hostels = $stmt_hostels->get_result();
 $hostels = [];
@@ -182,13 +203,49 @@ $stmt_hostels->close();
       history.pushState(null, null, '#' + sectionId);
     }
     
-  </script>
-
-
-  <script> 
     function viewHostelDetails(hostelId) {
-      window.location.href = "../../../views/hostel/hostel_details.php?id=" + hostelId;
+      window.location.href = "../../hostel/hostel_details.php?id=" + hostelId;
     }
+
+    // function getActiveSemesterEndDate($conn) {
+    //     $stmt = $conn->prepare("SELECT end_date FROM university_calendar WHERE is_active = 1 ORDER BY end_date DESC LIMIT 1");
+    //     $stmt->execute();
+    //     $result = $stmt->get_result();
+        
+    //     if ($result->num_rows > 0) {
+    //         $row = $result->fetch_assoc();
+    //         return $row['end_date'];
+    //     }
+        
+    //     // Default fallback - 4 months from now
+    //     return date('Y-m-d', strtotime('+4 months'));
+    // }
+
+    function updateCheckoutDate() {
+        // Fetch the active semester end date via AJAX
+        fetch('../../../controllers/calendar/get_semester_end.php')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('check_out_date').value = data.end_date;
+                    document.getElementById('checkout_display').textContent = 
+                        'Check-out date will be ' + formatDate(data.end_date) + 
+                        ' (end of semester)';
+                }
+            });
+    }
+
+    // Format date for display
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+    }
+
+    
     
     function viewBookingDetails(bookingId) {
       window.location.href = "../../../controllers/booking/view_booking.php?id=" + bookingId;
@@ -219,38 +276,81 @@ $stmt_hostels->close();
 
     function markAsRead(notificationId) {
       fetch("../../../controllers/notification/mark_notification_read.php?id=" + notificationId)
-        .then(response => response.json())
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
         .then(data => {
           if (data.success) {
-            // Remove the notification item from the list
-            const notificationItem = document.querySelector(`button[onclick="markAsRead(${notificationId})"]`).closest('.list-group-item');
-            notificationItem.remove();
+            // Mark notification as archived
+            const item = document.querySelector(`button[onclick="markAsRead(${notificationId})"]`).closest('.list-group-item');
+            item.classList.add('bg-light', 'archived');
+            item.style.opacity = '0.7';
+
+            // Update button appearance
+            const button = item.querySelector('button');
+            button.classList.remove('btn-light');
+            button.classList.add('btn-secondary');
+            button.textContent = 'Archived';
+            button.disabled = true;
+            
+            // Add archived label
+            const header = item.querySelector('.d-flex');
+            if (!header.querySelector('.archived-label')) {
+              const archivedLabel = document.createElement('span');
+              archivedLabel.className = 'badge bg-secondary archived-label';
+              archivedLabel.textContent = 'Archived';
+              header.appendChild(archivedLabel);
+            }
             
             // Update notification count
             updateNotificationCount(-1);
-            
-            // If no more notifications, refresh to show "no notifications" message
-            const remainingNotifications = document.querySelectorAll('.list-group-item').length;
-            if (remainingNotifications === 0) {
-              location.reload();
-            }
           }
+        })
+        .catch(error => {
+          console.error('Error marking notification as read:', error);
+          alert('Failed to mark notification as read. Please try again later.');
         });
     }
 
     function markAllAsRead() {
       fetch('../../../controllers/notification/mark_all_notifications_read.php')
-        .then(response => response.json())
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
         .then(data => {
           if (data.success) {
+            // Mark all notifications as read VISUALLY
+            const items = document.querySelectorAll('.list-group-item');
+            items.forEach(item => {
+              item.classList.add('bg-light');
+
+              // Update button appearance
+              const button = item.querySelector('button');
+              button.classList.remove('btn-light');
+              button.classList.add('btn-secondary');
+              button.textContent = 'Read';
+              button.disabled = true;
+            });
+
             // Update notification count to zero
             updateNotificationCount(-9999); // Large negative number to ensure it goes to zero
             
             // Refresh the page to show "no notifications" message
             location.reload();
           }
+        })
+        .catch(error => {
+          console.error('Error marking all notifications as read:', error);
+          alert('Failed to mark all notifications as read. Please try again later.');
         });
     }
+
 
     function updateNotificationCount(change) {
       // Get all notification badges
@@ -550,6 +650,19 @@ $stmt_hostels->close();
       object-fit: cover;
     }
 
+    .profile-avatar-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .profile-avatar-placeholder svg {
+      width: 100%;
+      height: 100%;
+    }
+
   </style>
 </head>
 
@@ -613,7 +726,7 @@ $stmt_hostels->close();
                 <i class="fas fa-building fa-3x mb-3 text-primary"></i>
                 <h5 class="card-title">Available Hostels</h5>
                 <p class="card-text display-4"><?php echo count($hostels); ?></p>
-                <button class="btn btn-sm btn-primary" onclick="showSection('hostels')">Browse Hostels</button>
+                <button class="btn btn-sm btn-primary" onclick="showSection('hostels'); return false;">Browse Hostels</button>
               </div>
             </div>
           </div>
@@ -624,7 +737,7 @@ $stmt_hostels->close();
                 <i class="fas fa-calendar-check fa-3x mb-3 text-success"></i>
                 <h5 class="card-title">My Bookings</h5>
                 <p class="card-text display-4"><?php echo count($bookings); ?></p>
-                <button class="btn btn-sm btn-primary" onclick="showSection('bookings')">View Bookings</button>
+                <button class="btn btn-sm btn-primary" onclick="showSection('bookings'); return false;">View Bookings</button>
               </div>
             </div>
           </div>
@@ -635,7 +748,7 @@ $stmt_hostels->close();
                 <i class="fas fa-credit-card fa-3x mb-3 text-warning"></i>
                 <h5 class="card-title">Payments</h5>
                 <p class="card-text display-4"><?php echo count($payments); ?></p>
-                <button class="btn btn-sm btn-primary" onclick="showSection('payments')">View Payments</button>
+                <button class="btn btn-sm btn-primary" onclick="showSection('payments'); return false;">View Payments</button>
               </div>
             </div>
           </div>
@@ -646,7 +759,7 @@ $stmt_hostels->close();
                 <i class="fas fa-bell fa-3x mb-3 text-danger"></i>
                 <h5 class="card-title">Notifications</h5>
                 <p class="card-text display-4"><?php echo $notification_count; ?></p>
-                <button class="btn btn-sm btn-primary" onclick="showSection('notifications')">View Notifications</button>
+                <button class="btn btn-sm btn-primary" onclick="showSection('notifications'); return false;">View Notifications</button>
               </div>
             </div>
           </div>
@@ -843,13 +956,22 @@ $stmt_hostels->close();
         <?php if (count($notifications) > 0): ?>
         <div class="list-group">
           <?php foreach($notifications as $notification): ?>
-          <div class="list-group-item">
+          <div class="list-group-item <?php echo $notification['is_read'] ? 'bg-light archived' : ''; ?>" style="<?php echo $notification['is_read'] ? 'opacity: 0.7;' : ''; ?>">
             <div class="d-flex w-100 justify-content-between">
               <h5 class="mb-1"><?php echo htmlspecialchars($notification['title']); ?></h5>
-              <small><?php echo timeAgo($notification['created_at']); ?></small>
+              <div class="d-flex align-items-center gap-2">
+                <?php if ($notification['is_read']): ?>
+                <span class="badge bg-secondary">Archived</span>
+                <?php endif; ?>
+                <small><?php echo timeAgo($notification['created_at']); ?></small>
+              </div>
             </div>
             <p class="mb-1"><?php echo htmlspecialchars($notification['message']); ?></p>
+            <?php if ($notification['is_read']): ?>
+            <button class="btn btn-sm btn-secondary" disabled>Archived</button>
+            <?php else: ?>
             <button class="btn btn-sm btn-light" onclick="markAsRead(<?php echo $notification['id']; ?>)">Mark as Read</button>
+            <?php endif; ?>
           </div>
           <?php endforeach; ?>
         </div>
@@ -871,7 +993,13 @@ $stmt_hostels->close();
             <div class="row">
               <div class="col-md-4 text-center mb-4">
                 <div class="profile-image-container">
-                  <img src="../../../assets/images/profile-placeholder.png" alt="Profile" class="rounded-circle profile-image">
+                  <div class="profile-avatar-placeholder">
+                    <svg width="150" height="150" viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="75" cy="75" r="75" fill="#e9ecef"/>
+                      <circle cx="75" cy="60" r="25" fill="#6c757d"/>
+                      <path d="M30 120c0-24.853 20.147-45 45-45s45 20.147 45 45" fill="#6c757d"/>
+                    </svg>
+                  </div>
                 </div>
                 <h4 class="mt-3"><?php echo htmlspecialchars($username); ?></h4>
                 <p class="text-muted"><?php echo htmlspecialchars($user_email); ?></p>
